@@ -1,0 +1,399 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String  @id @default(uuid())
+  email        String  @unique
+  passwordHash String
+  name         String?
+  timezone     String  @default("Europe/Moscow")
+  telegramChatId String?
+  telegramUserId String?
+
+  tariff Tariff @default(FREE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  students      Student[]
+  lessons       Lesson[]
+  notifications Notification[]
+  subscription  Subscription?
+  wallets       Wallet[]
+  categories    Category[]
+  telegramLinkTokens TelegramLinkToken[]
+
+  teacherLinks StudentTeacherLink[] @relation("TeacherLinks")
+  studentLinks StudentTeacherLink[] @relation("StudentLinks")
+
+  studentInvitesSent     StudentInvite[] @relation("StudentInviteTeacher")
+  studentInvitesAccepted StudentInvite[] @relation("StudentInviteAcceptedBy")
+
+  linkedStudentRecords Student[] @relation("StudentAccountUser")
+
+  homeworkTemplates HomeworkTemplate[]
+  homeworkTasks     HomeworkTask[]
+  studentSubscriptions StudentSubscription[]
+  studentBalanceEvents StudentBalanceEvent[]
+}
+
+model Student {
+  id     String @id @default(uuid())
+  userId String
+  accountUserId String?
+
+  name    String
+  contact String?
+  notes   String?
+
+  balance Int @default(0)
+  rateAmount Int?
+  rateMinutes Int @default(60)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id])
+  accountUser   User?          @relation("StudentAccountUser", fields: [accountUserId], references: [id])
+  lessons       Lesson[]
+  notifications Notification[]
+  invites       StudentInvite[] @relation("StudentInviteStudent")
+  balanceEvents StudentBalanceEvent[]
+  subscriptions StudentSubscription[]
+  homeworkTasks HomeworkTask[]
+
+  @@index([accountUserId])
+}
+
+model StudentInvite {
+  id              String   @id @default(uuid())
+  token           String   @unique
+  teacherId       String
+  studentId       String?
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  acceptedByUserId String?
+  createdAt       DateTime @default(now())
+
+  teacher    User     @relation("StudentInviteTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
+  student    Student? @relation("StudentInviteStudent", fields: [studentId], references: [id], onDelete: SetNull)
+  acceptedBy User?    @relation("StudentInviteAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([teacherId])
+  @@index([studentId])
+  @@index([expiresAt])
+}
+
+model StudentTeacherLink {
+  id            String   @id @default(uuid())
+  teacherId     String
+  studentUserId String
+  createdAt     DateTime @default(now())
+
+  teacher     User @relation("TeacherLinks", fields: [teacherId], references: [id], onDelete: Cascade)
+  studentUser User @relation("StudentLinks", fields: [studentUserId], references: [id], onDelete: Cascade)
+
+  @@unique([teacherId, studentUserId])
+  @@index([studentUserId])
+}
+
+model EmailOtpCode {
+  id        String   @id @default(uuid())
+  email     String
+  codeHash  String
+  expiresAt DateTime
+  consumedAt DateTime?
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
+}
+
+model Lesson {
+  id        String  @id @default(uuid())
+  userId    String
+  studentId String?
+
+  type   LessonType
+  status LessonStatus
+
+  startTime DateTime
+  endTime   DateTime
+  duration  Int
+
+  price  Int?
+  isPaid Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id])
+  student  Student?  @relation(fields: [studentId], references: [id])
+  homework Homework?
+}
+
+model Homework {
+  id       String @id @default(uuid())
+  lessonId String @unique
+
+  text   String
+  status HomeworkStatus @default(ASSIGNED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lesson Lesson @relation(fields: [lessonId], references: [id])
+}
+
+model HomeworkTemplate {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  text      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks HomeworkTask[]
+
+  @@index([userId])
+}
+
+model HomeworkTask {
+  id         String         @id @default(uuid())
+  userId     String
+  studentId  String
+  templateId String?
+
+  title  String
+  text   String
+  status HomeworkStatus @default(ASSIGNED)
+  dueAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  student  Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  template HomeworkTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([userId, studentId])
+  @@index([templateId])
+}
+
+model StudentSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  studentId String
+
+  title        String
+  lessonsTotal Int
+  lessonsLeft  Int
+  price        Int?
+  status       SubscriptionStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([userId, studentId])
+}
+
+model StudentBalanceEvent {
+  id        String   @id @default(uuid())
+  userId    String
+  studentId String
+  walletId  String?
+
+  type   BalanceEventType
+  amount Int
+  note   String?
+
+  happenedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([userId, studentId])
+  @@index([happenedAt])
+}
+
+model Notification {
+  id        String  @id @default(uuid())
+  userId    String
+  studentId String?
+
+  type    NotificationType
+  channel NotificationChannel
+
+  scheduledAt DateTime
+  sentAt      DateTime?
+  status      NotificationStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id])
+  student Student? @relation(fields: [studentId], references: [id])
+}
+
+model OutboxEvent {
+  id        String       @id @default(uuid())
+  topic     String
+  payload   Json
+  dedupeKey String?      @unique
+
+  status     OutboxStatus @default(PENDING)
+  attempts   Int          @default(0)
+  maxAttempts Int         @default(8)
+  availableAt DateTime    @default(now())
+  lockedAt    DateTime?
+  lockedBy    String?
+  processedAt DateTime?
+  lastError   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, availableAt])
+  @@index([lockedAt])
+}
+
+model Subscription {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  plan      Tariff
+  startedAt DateTime
+  expiresAt DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Wallet {
+  id     String @id @default(uuid())
+  userId String
+
+  name       String
+  currency   String  @default("RUB")
+  balance    Int     @default(0)
+  color      String?
+  isFavorite Boolean @default(false)
+  isArchived Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  Transaction Transaction[]
+  user        User          @relation(fields: [userId], references: [id])
+}
+
+model Transaction {
+  id         String @id
+  walletId   String
+  type       TransactionType
+  amount     Int
+  categoryId String?
+  date       DateTime @default(now())
+  comment    String?
+  createdAt  DateTime @default(now())
+
+  Wallet   Wallet    @relation(fields: [walletId], references: [id])
+  Category Category? @relation(fields: [categoryId], references: [id])
+}
+
+model Category {
+  id        String          @id @default(uuid())
+  userId    String
+  type      TransactionType // INCOME or EXPENSE
+  name      String
+  color     String?
+  createdAt DateTime        @default(now())
+
+  user         User          @relation(fields: [userId], references: [id])
+  transactions Transaction[]
+}
+
+enum Tariff {
+  FREE
+  EXPERT
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  FINISHED
+}
+
+enum BalanceEventType {
+  TOP_UP
+  ADJUSTMENT
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER
+}
+
+enum LessonType {
+  LESSON
+  PERSONAL
+}
+
+enum LessonStatus {
+  PLANNED
+  COMPLETED
+  CANCELED
+}
+
+enum HomeworkStatus {
+  ASSIGNED
+  DONE
+}
+
+enum NotificationType {
+  LESSON_REMINDER
+  PAYMENT_REMINDER
+  HOMEWORK_ASSIGNED
+}
+
+enum NotificationChannel {
+  EMAIL
+  TELEGRAM
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+model TelegramLinkToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
